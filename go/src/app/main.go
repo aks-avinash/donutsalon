@@ -11,7 +11,10 @@ import (
 
 	lightstep "github.com/lightstep/lightstep-tracer-go"
 	opentracing "github.com/opentracing/opentracing-go"
-	zipkin "github.com/openzipkin/zipkin-go-opentracing"
+	jaeger "github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-client-go/config"
+	"github.com/uber/jaeger-client-go/log"
+	"github.com/uber/jaeger-lib/metrics"
 )
 
 const (
@@ -62,17 +65,23 @@ func main() {
 				},
 			})
 		}
-	} else if *tracerType == "zipkin" {
-		tracerGen = func(component string) opentracing.Tracer {
-			collector, _ := zipkin.NewHTTPCollector(
-				fmt.Sprintf("http://donutsalon.com:9411/api/v1/spans"))
-			tracer, _ := zipkin.NewTracer(
-				zipkin.NewRecorder(collector, false, "127.0.0.1:0", component))
-			return tracer
+	} else if *tracerType == "jaeger" {
+		cfg := config.Configuration{
+			Sampler: &jaegercfg.SamplerConfig{
+				Type:  jaeger.SamplerTypeConst,
+				Param: 1,
+			},
 		}
-		t := tracerGen("foo")
-		sp := t.StartSpan("blah")
-		sp.Finish()
+		closer, err := cfg.InitGlobalTracer(
+			component,
+			config.Logger(log.StdLogger),
+			config.Metrics(metrics.NullFactory),
+		)
+		if err != nil {
+			log.Printf("Could not initialize jaeger tracer: %s", err.Error())
+			return
+		}
+		defer closer.Close()
 	} else {
 		panic(*tracerType)
 	}
