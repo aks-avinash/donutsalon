@@ -9,7 +9,6 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	lightstep "github.com/lightstep/lightstep-tracer-go"
 	opentracing "github.com/opentracing/opentracing-go"
 	jaeger "github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
@@ -29,7 +28,7 @@ var (
 	serviceHostport    = flag.String("service_hostport", "localhost:8080", "")
 	collectorHost      = flag.String("collector_host", "collector-grpc.lightstep.com", "")
 	collectorPort      = flag.Int("collector_port", 443, "")
-	tracerType         = flag.String("tracer_type", "lightstep", "")
+	tracerType         = flag.String("tracer_type", "jaeger", "")
 	orderProcesses     = flag.Int("order", 1, "")
 	restockerProcesses = flag.Int("restock", 0, "")
 	cleanerProcesses   = flag.Int("clean", 0, "")
@@ -50,22 +49,7 @@ func main() {
 	flag.Parse()
 	lightstep.SetGlobalEventHandler(lightstep.NewEventLogOneError())
 	var tracerGen TracerGenerator
-	if *tracerType == "lightstep" {
-		tracerGen = func(component string) opentracing.Tracer {
-			return lightstep.NewTracer(lightstep.Options{
-				AccessToken: *accessToken,
-				Collector: lightstep.Endpoint{
-					Host: *collectorHost,
-					Port: *collectorPort,
-				},
-				MaxBufferedSpans: 200000,
-				UseGRPC:          true,
-				Tags: opentracing.Tags{
-					lightstep.ComponentNameKey: component,
-				},
-			})
-		}
-	} else if *tracerType == "jaeger" {
+	if *tracerType == "jaeger" {
 		cfg := config.Configuration{
 			Sampler: &jaegercfg.SamplerConfig{
 				Type:  jaeger.SamplerTypeConst,
