@@ -16,16 +16,16 @@ services:
       - "8000:80"
       - "8001:8001"
 
-  donutsalon-2:
+  donutsalon-1:
     build:
       context: ./
       dockerfile: Dockerfile-back
     networks:
       envoymesh:
         aliases:
-          - donutsalon-2
+          - donutsalon-1
     environment:
-      - SERVICE_NAME=2
+      - SERVICE_NAME=1
     expose:
       - "80"
       - "8080"
@@ -35,6 +35,8 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
     networks:
       envoymesh:
         aliases:
@@ -42,9 +44,20 @@ services:
     expose:
       - "9411"
       - "16686"
+      - "5775"
+      - "6831"
+      - "6832"
+      - "5778"
+      - "14268"
+
     ports:
       - "9411:9411"
-      - "16686:16686"
+      - "16687:16686"
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "14268:14268"
 
 networks:
   envoymesh: {}

@@ -3,11 +3,13 @@ FROM rnburn/envoy-jaeger:0.11
 RUN apt-get update && \
     apt-get install -qqy \
 	ca-certificates dnsutils
+COPY jaeger.yaml /etc/jaeger.yaml
 COPY envoy-back.json /etc/envoy.json
 COPY ls_access_token /etc/ls_access_token
 COPY donutbin /usr/local/bin/donutbin
 COPY go/src/app /etc/app
 COPY start_back.sh /usr/local/bin/start_back.sh
+RUN ln -s /usr/local/lib/libjaegertracingd.so /usr/local/lib/libjaegertracing.so
 EXPOSE 80
 EXPOSE 8001
 EXPOSE 8080
