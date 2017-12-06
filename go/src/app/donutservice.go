@@ -73,10 +73,14 @@ func (ds *DonutService) webOrder(w http.ResponseWriter, r *http.Request) {
 		panic("flavor not set")
 	}
 
-	span := ds.tracer.StartSpan(fmt.Sprintf("order_donut[%s]", p.Flavor), opentracing.ChildOf(clientContext))
-	defer span.Finish()
+	var spanContext opentracing.SpanContext
+	if !*passthrough {
+		span := ds.tracer.StartSpan(fmt.Sprintf("order_donut[%s]", p.Flavor), opentracing.ChildOf(clientContext))
+		defer span.Finish()
+		spanContext = span.Context()
+	}
 
-	err := ds.makeDonut(span.Context(), p.Flavor)
+	err := ds.makeDonut(clientContext, spanContext, p.Flavor)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -91,8 +95,9 @@ func (ds *DonutService) handleState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ds *DonutService) webClean(w http.ResponseWriter, r *http.Request) {
-	span := ds.tracer.StartSpan("cleaner")
-	ds.cleanFryer(span.Context())
+	carrier := opentracing.HTTPHeadersCarrier(r.Header)
+	clientContext, _ := ds.tracer.Extract(opentracing.HTTPHeaders, carrier)
+	ds.cleanFryer(clientContext)
 }
 
 func (ds *DonutService) webRestock(w http.ResponseWriter, r *http.Request) {
@@ -118,10 +123,13 @@ func (ds *DonutService) serviceFry(w http.ResponseWriter, r *http.Request) {
 	carrier := opentracing.HTTPHeadersCarrier(r.Header)
 	clientContext, _ := ds.tracer.Extract(opentracing.HTTPHeaders, carrier)
 
-	span := ds.tracer.StartSpan(
-		"fry",
-		opentracing.ChildOf(clientContext))
-	defer span.Finish()
+	var span opentracing.Span
+	if !*passthrough {
+		span = ds.tracer.StartSpan(
+			"fry",
+			opentracing.ChildOf(clientContext))
+		defer span.Finish()
+	}
 
 	goCtx := opentracing.ContextWithSpan(context.Background(), span)
 	ds.fryer.FryDonut(goCtx)
@@ -139,10 +147,13 @@ func (ds *DonutService) serviceTop(w http.ResponseWriter, r *http.Request) {
 		panic("flavor not set")
 	}
 
-	span := ds.tracer.StartSpan(
-		"top",
-		opentracing.ChildOf(clientContext))
-	defer span.Finish()
+	var span opentracing.Span
+	if !*passthrough {
+		span = ds.tracer.StartSpan(
+			"top",
+			opentracing.ChildOf(clientContext))
+		defer span.Finish()
+	}
 
 	err := ds.addTopping(span, p.Flavor)
 	if err != nil {
@@ -157,8 +168,12 @@ func (ds *DonutService) state() *State {
 	}
 }
 
-func (ds *DonutService) call(clientSpanContext opentracing.SpanContext, path string, postBody []byte) error {
+func (ds *DonutService) call(passthroughCtx opentracing.SpanContext, clientSpanContext opentracing.SpanContext, path string, postBody []byte) error {
 	url := fmt.Sprintf("http://%s%s", *serviceHostport, path)
+
+	if *passthrough {
+		clientSpanContext = passthroughCtx
+	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(postBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -181,18 +196,24 @@ func (ds *DonutService) call(clientSpanContext opentracing.SpanContext, path str
 	return nil
 }
 
-func (ds *DonutService) makeDonut(parentSpanContext opentracing.SpanContext, flavor string) error {
-	donutSpan := ds.tracer.StartSpan("make_donut", opentracing.ChildOf(parentSpanContext))
-	defer donutSpan.Finish()
+func (ds *DonutService) makeDonut(passthroughCtx opentracing.SpanContext, parentSpanContext opentracing.SpanContext, flavor string) error {
+	var localSpanContext opentracing.SpanContext
+	var donutSpan opentracing.Span
+	if !*passthrough {
+		donutSpan = ds.tracer.StartSpan("make_donut", opentracing.ChildOf(parentSpanContext))
+		defer donutSpan.Finish()
+		localSpanContext = donutSpan.Context()
+	}
 	ctx := opentracing.ContextWithSpan(context.Background(), donutSpan)
 
 	ds.payer.BuyDonut(ctx)
-	err := ds.call(donutSpan.Context(), "/service/fry", []byte{})
+	err := ds.call(passthroughCtx, localSpanContext, "/service/fry", []byte{})
 	if err != nil {
 		return err
 	}
 	return ds.call(
-		donutSpan.Context(),
+		passthroughCtx,
+		localSpanContext,
 		"/service/top",
 		[]byte(fmt.Sprintf(`{"flavor":"%s"}`, flavor)))
 }
@@ -209,9 +230,12 @@ func (ds *DonutService) addTopping(span opentracing.Span, flavor string) error {
 	return topper.SprinkleTopping(opentracing.ContextWithSpan(context.Background(), span))
 }
 
-func (ds *DonutService) cleanFryer(parentSpanContext opentracing.SpanContext) {
-	donutSpan := ds.tracer.StartSpan("clean_fryer", opentracing.ChildOf(parentSpanContext))
-	defer donutSpan.Finish()
+func (ds *DonutService) cleanFryer(passthroughCtx opentracing.SpanContext) {
+	var donutSpan opentracing.Span
+	if !*passthrough {
+		donutSpan = ds.tracer.StartSpan("clean_fryer", opentracing.ChildOf(passthroughCtx))
+		defer donutSpan.Finish()
+	}
 	ctx := opentracing.ContextWithSpan(context.Background(), donutSpan)
 
 	ds.fryer.ChangeOil(ctx)
@@ -219,12 +243,15 @@ func (ds *DonutService) cleanFryer(parentSpanContext opentracing.SpanContext) {
 
 func (ds *DonutService) inventory() map[string]int {
 	inventory := make(map[string]int)
-	span := ds.tracer.StartSpan("inventory")
-	defer span.Finish()
+	var donutSpan opentracing.Span
+	if !*passthrough {
+		donutSpan = ds.tracer.StartSpan("inventory")
+		defer donutSpan.Finish()
+	}
 
-	ds.toppersLock.Lock(span)
+	ds.toppersLock.Lock(donutSpan)
 	for flavor, topper := range ds.toppers {
-		inventory[flavor] = topper.Quantity(span)
+		inventory[flavor] = topper.Quantity(donutSpan)
 	}
 	ds.toppersLock.Unlock()
 
@@ -232,8 +259,11 @@ func (ds *DonutService) inventory() map[string]int {
 }
 
 func (ds *DonutService) restock(parentSpanContext opentracing.SpanContext, flavor string) {
-	donutSpan := ds.tracer.StartSpan("restock_ingredients", opentracing.ChildOf(parentSpanContext))
-	defer donutSpan.Finish()
+	var donutSpan opentracing.Span
+	if parentSpanContext != nil {
+		donutSpan = ds.tracer.StartSpan("restock_ingredients", opentracing.ChildOf(parentSpanContext))
+		defer donutSpan.Finish()
+	}
 	ctx := opentracing.ContextWithSpan(context.Background(), donutSpan)
 
 	ds.toppersLock.Lock(donutSpan)

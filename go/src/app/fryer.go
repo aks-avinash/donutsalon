@@ -26,20 +26,28 @@ func newFryer(tracerGen TracerGenerator, duration time.Duration) *Fryer {
 }
 
 func (f *Fryer) FryDonut(ctx context.Context) {
-	span := startSpanFronContext("fry_donut", f.tracer, ctx)
-	defer span.Finish()
+	var span opentracing.Span
+	if !*passthrough {
+		span = startSpanFromContext("fry_donut", f.tracer, ctx)
+		defer span.Finish()
+	}
 
 	f.lock.Lock(span)
 	defer f.lock.Unlock()
 
-	span.LogEvent(fmt.Sprint("starting to fry: ", span.BaggageItem(donutOriginKey)))
+	if span != nil {
+		span.LogEvent(fmt.Sprint("starting to fry: ", span.BaggageItem(donutOriginKey)))
+	}
 	SleepGaussian(f.duration+time.Duration(math.Min(500, float64(f.oilLevel)))*time.Millisecond, f.lock.QueueLength())
 	f.oilLevel++
 }
 
 func (f *Fryer) ChangeOil(ctx context.Context) {
-	span := startSpanFronContext("change_oil", f.tracer, ctx)
-	defer span.Finish()
+	var span opentracing.Span
+	if !*passthrough {
+		span = startSpanFromContext("change_oil", f.tracer, ctx)
+		defer span.Finish()
+	}
 
 	f.lock.Lock(span)
 	defer f.lock.Unlock()

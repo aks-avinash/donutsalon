@@ -32,7 +32,7 @@ func NewSmartLock(cont bool) *SmartLock {
 }
 
 func (sl *SmartLock) Lock(activeSpan opentracing.Span) {
-	if sl.cont {
+	if sl.cont && activeSpan != nil {
 		activeSpan.SetTag("c:", sl.lockID)
 	}
 	waiters := atomic.AddInt64(&sl.queueLength, 1)
@@ -40,7 +40,7 @@ func (sl *SmartLock) Lock(activeSpan opentracing.Span) {
 	sl.realLock.Lock()
 	lockDuration := time.Now().Sub(before)
 
-	if lockDuration.Seconds() > 0.01 {
+	if lockDuration.Seconds() > 0.01 && activeSpan != nil {
 		acquireSpan := activeSpan.Tracer().StartSpan(
 			"mutex_acquire",
 			opentracing.ChildOf(activeSpan.Context()),
@@ -58,15 +58,17 @@ func (sl *SmartLock) Unlock() {
 	released := time.Now()
 
 	heldTime := released.Sub(sl.acquired)
-	if heldTime.Seconds() > 0.01 {
-		heldSpan := sl.activeSpan.Tracer().StartSpan(
-			"mutex_hold",
-			opentracing.ChildOf(sl.activeSpan.Context()),
-			opentracing.StartTime(sl.acquired))
-		heldSpan.Finish()
-	}
+	if sl.activeSpan != nil {
+		sl.activeSpan.SetTag("weight", int(heldTime.Seconds()*1000.0+1))
+		if heldTime.Seconds() > 0.01 {
+			heldSpan := sl.activeSpan.Tracer().StartSpan(
+				"mutex_hold",
+				opentracing.ChildOf(sl.activeSpan.Context()),
+				opentracing.StartTime(sl.acquired))
+			heldSpan.Finish()
+		}
 
-	sl.activeSpan.SetTag("weight", int(heldTime.Seconds()*1000.0+1))
+	}
 	sl.realLock.Unlock()
 }
 

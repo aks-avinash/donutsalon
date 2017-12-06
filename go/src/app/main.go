@@ -30,6 +30,7 @@ var (
 	orderProcesses     = flag.Int("order", 1, "")
 	restockerProcesses = flag.Int("restock", 0, "")
 	cleanerProcesses   = flag.Int("clean", 0, "")
+	passthrough        = flag.Bool("passthrough", false, "")
 )
 
 func SleepGaussian(d time.Duration, queueLength float64) {
@@ -121,7 +122,7 @@ func runFakeUser(flavor string, ds *DonutService) {
 	for {
 		SleepGaussian(2500*time.Millisecond, 1)
 		span := ds.tracer.StartSpan(fmt.Sprintf("background_order[%s]", flavor))
-		ds.makeDonut(span.Context(), flavor)
+		ds.makeDonut(span.Context(), span.Context(), flavor)
 		span.Finish()
 	}
 }
@@ -144,7 +145,7 @@ func runFakeCleaner(flavor string, ds *DonutService) {
 	}
 }
 
-func startSpanFronContext(name string, tracer opentracing.Tracer, ctx context.Context) opentracing.Span {
+func startSpanFromContext(name string, tracer opentracing.Tracer, ctx context.Context) opentracing.Span {
 	var parentSpanContext opentracing.SpanContext
 	if parent := opentracing.SpanFromContext(ctx); parent != nil {
 		parentSpanContext = parent.Context()
