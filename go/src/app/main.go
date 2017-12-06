@@ -7,9 +7,11 @@ import (
 	"math"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
+	jaeger "github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
 )
 
@@ -48,7 +50,15 @@ func main() {
 	var tracerGen TracerGenerator
 	if *tracerType == "jaeger" {
 		tracerGen = func(component string) opentracing.Tracer {
-			cfg := config.Configuration{}
+			cfg := config.Configuration{
+				Sampler: &config.SamplerConfig{
+					Type:  jaeger.SamplerTypeConst,
+					Param: 1,
+				},
+				Reporter: &config.ReporterConfig{
+					LocalAgentHostPort: fmt.Sprintf("%s:6831", os.Getenv("JAEGER_AGENT_HOST")),
+				},
+			}
 			tracer, _, err := cfg.New(component)
 			if err != nil {
 				panic(err)
