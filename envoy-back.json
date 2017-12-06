@@ -41,10 +41,10 @@
   "tracing": {
     "http": {
       "driver": {
-        "type": "dynamic",
+        "type": "zipkin", 
         "config": {
-          "library": "/usr/local/lib/libjaegertracing.so",
-          "config_file": "/etc/jaeger.yaml"
+          "collector_cluster": "jaeger",
+          "collector_endpoint": "/api/v1/spans"
         }
       }
     }

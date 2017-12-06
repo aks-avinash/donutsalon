@@ -10,7 +10,8 @@ import (
 	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/uber/jaeger-client-go/config"
+	jaeger "github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-client-go/zipkin"
 )
 
 const (
@@ -48,11 +49,17 @@ func main() {
 	var tracerGen TracerGenerator
 	if *tracerType == "jaeger" {
 		tracerGen = func(component string) opentracing.Tracer {
-			cfg := config.Configuration{}
-			tracer, _, err := cfg.New(component)
+			sampler := jaeger.NewConstSampler(true)
+			trans, err := jaeger.NewUDPTransport("jaeger:6831", 0)
 			if err != nil {
 				panic(err)
 			}
+			reporter := jaeger.NewRemoteReporter(trans)
+			zipkinPropagator := zipkin.NewZipkinB3HTTPHeaderPropagator()
+			injector := jaeger.TracerOptions.Injector(opentracing.HTTPHeaders, zipkinPropagator)
+			extractor := jaeger.TracerOptions.Extractor(opentracing.HTTPHeaders, zipkinPropagator)
+			zipkinSharedRPCSpan := jaeger.TracerOptions.ZipkinSharedRPCSpan(true)
+			tracer, _ := jaeger.NewTracer(component, sampler, reporter, injector, extractor, zipkinSharedRPCSpan)
 			return tracer
 		}
 	} else {
