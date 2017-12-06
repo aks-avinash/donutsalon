@@ -44,7 +44,7 @@
         "type": "dynamic",
         "config": {
           "library": "/usr/local/lib/libjaegertracing.so",
-          "config_file": "/etc/jaeger.yaml"
+          "config_file": "/etc/envoy-jaeger.yaml"
         }
       }
     }
